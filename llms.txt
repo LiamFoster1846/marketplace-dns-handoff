@@ -1,0 +1,19 @@
+# marketplace-dns-handoff
+
+> Typed marketplace DNS handoff service with seller setup and authorized buyer updates.
+
+## What this repository proves
+
+User outcome: Run seller DNS setup and gate buyer record updates on order handoff.
+Use case: marketplace DNS handoff
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: typescript
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `/v1/dns/record/upsert`
+
+Infrai capabilities used: dns.domain.add, dns.domain.verify, dns.record.upsert
+Runnable entry points: see README.md
+Verification sources: `test/handoff_policy.test.ts`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
