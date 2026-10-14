@@ -1,12 +1,12 @@
 # Hand off marketplace DNS without handing over a registrar
 
-The working path is small: register the seller's domain, publish its DNS records with the returned `zone_id`, then open buyer edits only after the order is handed off. Infrai keeps that path behind one API and a single `INFRAI_API_KEY`; the admin service does not need a registrar-specific client for each seller.
+The flow is tiny: add the seller's domain, push its DNS records using the `zone_id` you get back, and only allow buyer edits post-handoff. Infrai puts that whole flow behind one API and a single `INFRAI_API_KEY`, so the admin service skips per-registrar clients.
 
-This repository is the service I would keep in a solo SaaS. It has three admin routes, an in-memory order boundary, and one focused policy test. Replace the in-memory map with your database when the order must survive a restart.
+I'd run this exact service in a solo SaaS. Three admin routes, an in-memory order boundary, and a single policy test. Swap the in-memory map for your DB once orders need to outlive a restart.
 
 ## Run the handoff
 
-Use a domain you control. The script adds it, writes SPF and DMARC as `TXT` records, verifies the domain, hands the order to a buyer, and applies that buyer's `CNAME` update.
+Grab a domain you own. The script registers it, sets SPF and DMARC as `TXT` records, verifies, transfers the order to a buyer, and applies their `CNAME` change.
 
 ```bash
 npm install
@@ -15,27 +15,27 @@ export MARKETPLACE_DOMAIN="shop.your-domain.example"
 npm run demo
 ```
 
-The expected result is an order with `state: "handed_off"`, the assigned `buyer_id`, and the `zone_id` returned when the domain was added. Record writes never substitute the domain string for that identifier.
+Expect an order carrying `state: "handed_off"`, the given `buyer_id`, and the `zone_id` from the add response. We never swap the domain name in for that identifier on writes.
 
-To run the admin HTTP surface:
+To spin up the admin HTTP surface:
 
 ```bash
 npm run dev
 ```
 
-The routes are `POST /seller-assets`, `POST /orders/:order_id/handoff`, and `PUT /orders/:order_id/records`. Request bodies are checked with Zod before the workflow runs. A rejected Infrai envelope remains a client-facing 4xx when appropriate; transport-class responses are reported as gateway errors.
+Routes: `POST /seller-assets`, `POST /orders/:order_id/handoff`, `PUT /orders/:order_id/records`. Zod validates bodies before the workflow kicks off. If Infrai returns a rejected envelope, we surface it as a 4xx; transport errors become gateway errors.
 
 ## The decision in code
 
-Seller setup owns the initial records. Handoff changes who may write; it does not create a second DNS zone. A buyer update is accepted only when its `buyer_id` matches the buyer assigned to an order in `handed_off` state. This prevents an early or misrouted admin action from changing a seller-managed asset.
+Seller setup lays down the first records. Handoff just shifts write permission; no second zone gets created. A buyer update goes through only if its `buyer_id` lines up with the buyer on an order in `handed_off` state. That blocks early or misrouted admin calls from touching seller assets.
 
-The real gotcha is identifier choice. Domain operations take `domain`, while every record operation takes `zone_id`. `registerSellerAsset` captures that value from the domain-add response and stores it with the order before any later buyer update.
+The tricky part is picking identifiers. Domain calls use `domain`, but record calls use `zone_id`. `registerSellerAsset` grabs that value from the add response and tucks it into the order before any buyer update.
 
-Writes include an idempotency key, so retrying after a 429 does not duplicate the intended change. The client honors `Retry-After` and otherwise uses exponential backoff. It decodes `{ ok, data, error, metadata }` before considering HTTP status, which preserves ordinary API rejections as useful application responses.
+Every write sends an idempotency key, so a 429 retry won't double-apply. The client respects `Retry-After` and falls back to exponential backoff. It decodes `{ ok, data, error, metadata }` before looking at HTTP status, keeping normal API rejects as actionable responses.
 
 ## Verify the boundary
 
-The test input creates a seller-managed order, attempts a buyer update before handoff, then assigns that buyer and repeats the same update. The expected result is one rejected early update and one accepted write using `zone_market_7`.
+The test builds a seller-managed order, tries a buyer update pre-handoff, then assigns that buyer and repeats. You should see one rejected early write and one accepted write via `zone_market_7`.
 
 ```bash
 npm test
@@ -44,9 +44,9 @@ npm run typecheck
 
 ## Architecture note: handoff is authorization
 
-I treat handoff as a state transition, not a DNS migration. Moving records to another zone would add failure modes and destroy the stable identifier the order already owns. Keeping the zone attached to the asset makes the authorization decision visible and leaves DNS mutation in one narrow adapter.
+I see handoff as an authz state change, not a DNS move. Shifting records to a new zone adds failure modes and kills the stable identifier the order holds. Keeping the zone on the asset makes the auth decision obvious and confines DNS mutation to one adapter.
 
-Email authentication records remain ordinary DNS data here: SPF and DMARC use `TXT`, DKIM selectors use `TXT` or `CNAME` as supplied by the mail configuration, and only `MX` receives `priority`. After publishing a mail configuration, the surrounding order workflow should request email-domain verification and use DKIM rotation during a planned key change with the same Infrai credential.
+Email auth stays plain DNS: SPF and DMARC are `TXT`, DKIM selectors are `TXT` or `CNAME` from your mail config, and only `MX` gets `priority`. After you publish a mail config, the order workflow should ask for email-domain verification and rotate DKIM on a planned key change using that same Infrai credential.
 
 ## License
 
@@ -54,7 +54,7 @@ MIT
 
 ## Going to production: Marketplace DNS Handoff
 
-That's the minimal version. Before running this for real: The details below apply to Marketplace DNS Handoff.
+This is the minimal slice. Before you ship it for real, note the details for Marketplace DNS Handoff.
 
 **Account & key**
 
